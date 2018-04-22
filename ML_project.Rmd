@@ -1,0 +1,134 @@
+---
+title: "Machine Learning Project"
+author: "R Goetten"
+date: "4/22/2018"
+output: 
+  html_document: 
+    fig_caption: yes
+    keep_md: yes
+---
+
+# Introduction  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit is a way to monitor your level of activity. People are regularly quantifying how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+Six participants were asked to perform one set of 10 repetitions of dumbell lifts in 5 different styles (1 correctly and 4 incorrectly). In order to collect the data, accelerometers were placed on their belts, forearms, arms, and dumbells.  
+
+The goal of this project is to analyse the data and try to predict the manner in which they did the exercise.  
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.  
+
+For the purpose of this project, the following steps will be followed:  
+1. Data Processing  
+2. Cleaning and Preparing Data  
+3. Prediction Models  
+4. Applying the Selected Model to the Test Dataset  
+
+# Data Processing  
+The first step will be to upload all the libraries that are necessary for the analysis, and set a seed to make it reproducible.
+```{r, warning=FALSE}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+set.seed(12345)
+```
+
+Next, we load and read the training and testing sets from the source mentioned above, and then partition the training set further in 2 to create a Training set (70% of the data) for the modeling process, and a Test set (30% of the data) for the validations.   
+The original testing dataset is not changed and will only be used for the quiz results generation.  
+```{r, warning=FALSE}
+trainURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(trainURL))
+testing <- read.csv(url(testURL))
+
+dataPart <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+myTraining <- training[dataPart, ]
+myTesting <- training[-dataPart, ]
+dim(myTraining)
+dim(myTesting)
+```
+
+# Cleaning and Preparing Data   
+Both datasets have 160 variables. The cleaning procedures below will remove the variables that have more than 95% NA's.
+The Near Zero variance (NZV) and the ID variables are also removed.
+```{r, warning = FALSE}
+NZV <- nearZeroVar(myTraining)
+myTraining <- myTraining[ ,-NZV]
+myTesting <- myTesting[ ,-NZV]
+
+dataPart <- apply(myTraining, 2, function(x) mean(is.na(x))) > 0.95
+myTraining <- myTraining[, -which(dataPart, dataPart == FALSE)]
+myTesting <- myTesting[, -which(dataPart, dataPart == FALSE)]
+
+myTraining <- myTraining[ , -(1:5)]
+myTesting <- myTesting[ , -(1:5)]
+
+summary(myTraining$classe)
+summary(myTesting$classe)
+plot(myTraining$classe, col="light blue", main="Distribution of the CLASSE Variable - Training Data Set", xlab="classe categories", ylab="count")
+
+```
+
+The graph above shows us that each class is within the same order of magnitude of each other. Class A (which means, the exercise is been performed correctly) is the most frequent while class D is the least frequent.  
+
+# Prediction Models  
+Two methods will be applied to model the regressions in the myTraining dataset; the best one (with higher accuracy when applied to the myTesting dataset) will be used for the quiz predictions. 
+The methods are:  Decision Tree and Random Forests.  
+
+A Confusion Matrix is plotted at the end of each analysis to better visualize the accuracy of the models.  
+
+In our models, **cross-validation** is performed by subsampling our training data set randomly without replacement into 2 subsamples: myTraining data (70% of the original Training data set) and myTesting data (30%). 
+
+
+## a. Decision Tree Model
+```{r}
+modelDT <- rpart(classe ~ ., data = myTraining, method = "class")
+fancyRpartPlot(modelDT) # view the decision
+
+predictionDT <- predict(modelDT, myTesting, type = "class") # predict
+confusionMatrixDT <- confusionMatrix(predictionDT, myTesting$classe) # test results
+confusionMatrixDT
+
+plot(confusionMatrixDT$table, col = confusionMatrixDT$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(confusionMatrixDT$overall['Accuracy'], 4))) # plot accuracy
+```
+
+**Expected out-of-sample error rate:**
+```{r}
+eoose <- (1-confusionMatrix(predictionDT, myTesting$classe)$overall[[1]])
+eoose
+```
+
+
+## b. Random Forest Model   
+```{r}
+modelRF <- randomForest(classe ~. , data=myTraining)
+
+predictionRF <- predict(modelRF, myTesting, type = "class")
+confusionMatrixRF <- confusionMatrix(predictionRF, myTesting$classe)
+confusionMatrixRF
+
+plot(confusionMatrixRF$table, col = confusionMatrixRF$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(confusionMatrixRF$overall['Accuracy'], 4))) #plot Accuracy RF
+
+```
+
+**Expected out-of-sample error rate:**
+```{r}
+eoose <- (1-confusionMatrix(predictionRF, myTesting$classe)$overall[[1]])
+eoose
+```
+
+# Applying the Selected Model to the Test Dataset  
+The accuracy of the 2 regression modeling methods above are: a. Decision Tree : 0.7368, b. Random Forest : 0.9947
+
+In that case, the Random Forest model will be applied to predict the 20 different cases in the testing dataset, since this model is more accurate than the Decision Tree model.
+```{r}
+predictRF <- predict(modelRF, testing)
+predictRF
+```
